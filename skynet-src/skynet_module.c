@@ -25,25 +25,35 @@ static void *
 _try_open(struct modules *m, const char * name) {
 	const char *l;
 	const char * path = m->path;
+	// 加载path的模块路径
 	size_t path_size = strlen(path);
+	// 需要加载的模块名字
 	size_t name_size = strlen(name);
 
+	// 完整路径最大长度
 	int sz = path_size + name_size;
 	//search path
 	void * dl = NULL;
 	char tmp[sz];
 	do
 	{
+		// 重置路径
 		memset(tmp,0,sz);
+		// 跳过';'符号
 		while (*path == ';') path++;
+		// 寻找到末尾时
 		if (*path == '\0') break;
+		// 寻找下一个';'所在的指针位置
 		l = strchr(path, ';');
 		if (l == NULL) l = path + strlen(path);
+		// 计算模块路径的长度
 		int len = l - path;
 		int i;
+		// 便利路径，直到路径的末尾或者遇到'?'符
 		for (i=0;path[i]!='?' && i < len ;i++) {
 			tmp[i] = path[i];
 		}
+		// 拼接出模块的完整路径
 		memcpy(tmp+i,name,name_size);
 		if (path[i] == '?') {
 			strncpy(tmp+i+name_size,path+i+1,len - i - 1);
@@ -51,7 +61,9 @@ _try_open(struct modules *m, const char * name) {
 			fprintf(stderr,"Invalid C service path\n");
 			exit(1);
 		}
+		// 加载模块路径的动态链接库，加载成功时dl非null
 		dl = dlopen(tmp, RTLD_NOW | RTLD_GLOBAL);
+		// 继续往后移动
 		path = l;
 	}while(dl == NULL);
 
@@ -59,6 +71,7 @@ _try_open(struct modules *m, const char * name) {
 		fprintf(stderr, "try open %s failed : %s\n",name,dlerror());
 	}
 
+	// 返回动态链接
 	return dl;
 }
 
