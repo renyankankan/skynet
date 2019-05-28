@@ -18,8 +18,9 @@
 #define MQ_IN_GLOBAL 1
 #define MQ_OVERLOAD 1024
 
+// 消息队列
 struct message_queue {
-	struct spinlock lock;
+	struct spinlock lock; // 互斥锁
 	uint32_t handle;
 	int cap;
 	int head;

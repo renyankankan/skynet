@@ -4,11 +4,12 @@
 #include <stdlib.h>
 #include <stdint.h>
 
+// skynet 消息
 struct skynet_message {
-	uint32_t source;
-	int session;
-	void * data;
-	size_t sz;
+	uint32_t source; // 消息来源
+	int session; // 消息session
+	void * data; // 消息内容指针
+	size_t sz; // 消息长度
 };
 
 // type is encoding in skynet_message.sz high 8bit

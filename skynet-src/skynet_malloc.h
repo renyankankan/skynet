@@ -11,6 +11,7 @@
 #define skynet_aligned_alloc aligned_alloc
 #define skynet_posix_memalign posix_memalign
 
+// 重命名函数
 void * skynet_malloc(size_t sz);
 void * skynet_calloc(size_t nmemb,size_t size);
 void * skynet_realloc(void *ptr, size_t size);

@@ -6,6 +6,7 @@
 #include <stddef.h>
 #include <stdint.h>
 
+// 定义协议类型
 #define PTYPE_TEXT 0
 #define PTYPE_RESPONSE 1
 #define PTYPE_MULTICAST 2
