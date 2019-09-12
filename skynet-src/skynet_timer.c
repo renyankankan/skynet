@@ -22,9 +22,9 @@
 typedef void (*timer_execute_func)(void *ud,void *arg);
 
 #define TIME_NEAR_SHIFT 8
-#define TIME_NEAR (1 << TIME_NEAR_SHIFT)
+#define TIME_NEAR (1 << TIME_NEAR_SHIFT) // 256
 #define TIME_LEVEL_SHIFT 6
-#define TIME_LEVEL (1 << TIME_LEVEL_SHIFT)
+#define TIME_LEVEL (1 << TIME_LEVEL_SHIFT) // 64
 #define TIME_NEAR_MASK (TIME_NEAR-1)
 #define TIME_LEVEL_MASK (TIME_LEVEL-1)
 
@@ -34,36 +34,38 @@ struct timer_event {
 };
 
 struct timer_node {
-	struct timer_node *next;
-	uint32_t expire;
+	struct timer_node *next; // 下一个
+	uint32_t expire; // 过期时间
 };
 
 struct link_list {
-	struct timer_node head;
-	struct timer_node *tail;
+	struct timer_node head; // 链表头(不包含实际数据，仅仅作为头使用，第一个数据插入其next中)
+	struct timer_node *tail; // 链表尾指针
 };
 
 struct timer {
 	struct link_list near[TIME_NEAR];
 	struct link_list t[4][TIME_LEVEL];
-	struct spinlock lock;
-	uint32_t time;
-	uint32_t starttime;
-	uint64_t current;
-	uint64_t current_point;
+	struct spinlock lock; // 自旋锁
+	uint32_t time; // timer_shift次数,0.01秒一次
+	uint32_t starttime; // 初始时时间(秒)
+	uint64_t current; // 从初始到现在经历过的时间(精度0.01秒)
+	uint64_t current_point; // 最近更新的时间(精度0.01秒)
 };
 
 static struct timer * TI = NULL;
 
 static inline struct timer_node *
 link_clear(struct link_list *list) {
+	// 获取数据
 	struct timer_node * ret = list->head.next;
-	list->head.next = 0;
-	list->tail = &(list->head);
+	list->head.next = 0; // next设置为NULL
+	list->tail = &(list->head); // tail指向head
 
 	return ret;
 }
 
+// 将timer_node插入到末尾
 static inline void
 link(struct link_list *list,struct timer_node *node) {
 	list->tail->next = node;
@@ -73,6 +75,7 @@ link(struct link_list *list,struct timer_node *node) {
 
 static void
 add_node(struct timer *T,struct timer_node *node) {
+	// timer_node过期时间
 	uint32_t time=node->expire;
 	uint32_t current_time=T->time;
 	
@@ -98,7 +101,7 @@ timer_add(struct timer *T,void *arg,size_t sz,int time) {
 	memcpy(node+1,arg,sz);
 
 	SPIN_LOCK(T);
-
+		// 过期时间,转换成距离启动时的时间
 		node->expire=time+T->time;
 		add_node(T,node);
 
@@ -118,6 +121,7 @@ move_list(struct timer *T, int level, int idx) {
 static void
 timer_shift(struct timer *T) {
 	int mask = TIME_NEAR;
+	// timer_shift次数,0.01秒一次
 	uint32_t ct = ++T->time;
 	if (ct == 0) {
 		move_list(T, 3, 0);
@@ -146,7 +150,7 @@ dispatch_list(struct timer_node *current) {
 		message.source = 0;
 		message.session = event->session;
 		message.data = NULL;
-		message.sz = (size_t)PTYPE_RESPONSE << MESSAGE_TYPE_SHIFT;
+		message.sz = (size_t)PTYPE_RESPONSE << MESSAGE_TYPE_SHIFT; // 1 << ((sizeof(size_t)-1) * 8)
 
 		skynet_context_push(event->handle, &message);
 		
@@ -186,7 +190,9 @@ timer_update(struct timer *T) {
 
 static struct timer *
 timer_create_timer() {
+	// 分配内存
 	struct timer *r=(struct timer *)skynet_malloc(sizeof(struct timer));
+	// 重置内容
 	memset(r,0,sizeof(*r));
 
 	int i,j;
@@ -240,8 +246,11 @@ systime(uint32_t *sec, uint32_t *cs) {
 	*cs = (uint32_t)(ti.tv_nsec / 10000000);
 #else
 	struct timeval tv;
+	// 获取当前时间
 	gettimeofday(&tv, NULL);
+	// 秒数
 	*sec = tv.tv_sec;
+	// 微妙/10000
 	*cs = tv.tv_usec / 10000;
 #endif
 }
@@ -265,6 +274,7 @@ gettime() {
 
 void
 skynet_updatetime(void) {
+	// 获取当前时间(精度0.01秒)
 	uint64_t cp = gettime();
 	if(cp < TI->current_point) {
 		skynet_error(NULL, "time diff error: change from %lld to %lld", cp, TI->current_point);
@@ -292,11 +302,12 @@ skynet_now(void) {
 
 void 
 skynet_timer_init(void) {
+	// 初始创建
 	TI = timer_create_timer();
 	uint32_t current = 0;
 	systime(&TI->starttime, &current);
-	TI->current = current;
-	TI->current_point = gettime();
+	TI->current = current; // 启动后经历过的时间(精度0.01秒)
+	TI->current_point = gettime(); // 记录当前时间(精度0.01秒)
 }
 
 // for profile

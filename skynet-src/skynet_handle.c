@@ -17,45 +17,52 @@ struct handle_name {
 };
 
 struct handle_storage {
-	struct rwlock lock;
+	struct rwlock lock; // 读写锁
 
-	uint32_t harbor;
-	uint32_t handle_index;
-	int slot_size;
-	struct skynet_context ** slot;
+	uint32_t harbor; // harbor编号作为32位整数的高八位
+	uint32_t handle_index; // 下一个要查找的slot起点
+	int slot_size; // slot数组数量
+	struct skynet_context ** slot; // slot实际存储
 	
-	int name_cap;
-	int name_count;
-	struct handle_name *name;
+	int name_cap; // name容量
+	int name_count; // name数量
+	struct handle_name *name; // name实际存在
 };
 
 static struct handle_storage *H = NULL;
 
+// skynet_context指针添加到H中
 uint32_t
 skynet_handle_register(struct skynet_context *ctx) {
 	struct handle_storage *s = H;
 
+	// 写锁定
 	rwlock_wlock(&s->lock);
 	
 	for (;;) {
 		int i;
 		uint32_t handle = s->handle_index;
+		// 遍历所有的slot
 		for (i=0;i<s->slot_size;i++,handle++) {
 			if (handle > HANDLE_MASK) {
 				// 0 is reserved
 				handle = 1;
 			}
 			int hash = handle & (s->slot_size-1);
+			// 如果slot没有被占用,将ctx插入到slt中
 			if (s->slot[hash] == NULL) {
 				s->slot[hash] = ctx;
 				s->handle_index = handle + 1;
 
 				rwlock_wunlock(&s->lock);
 
+				// handle拼接高8位harbor
 				handle |= s->harbor;
+				// 返回完整的handle编号
 				return handle;
 			}
 		}
+		// 如果找不到空的槽,扩容
 		assert((s->slot_size*2 - 1) <= HANDLE_MASK);
 		struct skynet_context ** new_slot = skynet_malloc(s->slot_size * 2 * sizeof(struct skynet_context *));
 		memset(new_slot, 0, s->slot_size * 2 * sizeof(struct skynet_context *));
@@ -70,16 +77,19 @@ skynet_handle_register(struct skynet_context *ctx) {
 	}
 }
 
+// 释放H中的指定handle中的ctx
 int
 skynet_handle_retire(uint32_t handle) {
 	int ret = 0;
 	struct handle_storage *s = H;
 
+	// 锁定写锁
 	rwlock_wlock(&s->lock);
 
 	uint32_t hash = handle & (s->slot_size-1);
 	struct skynet_context * ctx = s->slot[hash];
 
+	// 从H中释放ctx
 	if (ctx != NULL && skynet_context_handle(ctx) == handle) {
 		s->slot[hash] = NULL;
 		ret = 1;
@@ -99,8 +109,10 @@ skynet_handle_retire(uint32_t handle) {
 		ctx = NULL;
 	}
 
+	// 释放写锁
 	rwlock_wunlock(&s->lock);
 
+	// 如果ctx存在,释放ctx
 	if (ctx) {
 		// release ctx may call skynet_handle_* , so wunlock first.
 		skynet_context_release(ctx);
@@ -109,6 +121,7 @@ skynet_handle_retire(uint32_t handle) {
 	return ret;
 }
 
+// 释放全部ctx
 void 
 skynet_handle_retireall() {
 	struct handle_storage *s = H;
@@ -243,16 +256,22 @@ skynet_handle_namehandle(uint32_t handle, const char *name) {
 	return ret;
 }
 
+// 初始创建H
 void 
 skynet_handle_init(int harbor) {
 	assert(H==NULL);
+	// 分配内存
 	struct handle_storage * s = skynet_malloc(sizeof(*H));
+	// slot存在的是skynet_context指针的指针
 	s->slot_size = DEFAULT_SLOT_SIZE;
 	s->slot = skynet_malloc(s->slot_size * sizeof(struct skynet_context *));
+	// 置空
 	memset(s->slot, 0, s->slot_size * sizeof(struct skynet_context *));
 
+	// 初始化读写锁
 	rwlock_init(&s->lock);
 	// reserve 0 for system
+	// harbor编号后八位向左移动24位
 	s->harbor = (uint32_t) (harbor & 0xff) << HANDLE_REMOTE_SHIFT;
 	s->handle_index = 1;
 	s->name_cap = 2;

@@ -51,13 +51,17 @@ optstring(const char *key,const char * opt) {
 
 static void
 _init_env(lua_State *L) {
+	// 插入一个nil在栈顶，栈索引为-1,配置的config_table的坐标为-2
 	lua_pushnil(L);  /* first key */
+	// 对-2位置的对象做next操作,第一步弹出栈顶一个键,再讲key添加到栈顶,之后将value添加到栈顶: value(-1),key(-2),config_table(-3)
 	while (lua_next(L, -2) != 0) {
+		// 读取key的类型,key的类型必须为string
 		int keyt = lua_type(L, -2);
 		if (keyt != LUA_TSTRING) {
 			fprintf(stderr, "Invalid config table\n");
 			exit(1);
 		}
+		// 读取key的值
 		const char * key = lua_tostring(L,-2);
 		if (lua_type(L,-1) == LUA_TBOOLEAN) {
 			int b = lua_toboolean(L,-1);
@@ -70,8 +74,10 @@ _init_env(lua_State *L) {
 			}
 			skynet_setenv(key,value);
 		}
+		// 弹出栈顶一个值(value):key(-1),config_table(-2)
 		lua_pop(L,1);
 	}
+	// 读取完成，弹出config_table
 	lua_pop(L,1);
 }
 
@@ -134,19 +140,24 @@ main(int argc, char *argv[]) {
 
 	struct skynet_config config;
 
+	// 新建lua状态机，为了读取config_file配置
 	struct lua_State *L = luaL_newstate();
 	luaL_openlibs(L);	// link lua lib
 
+	// 将代码load_config编译后压入栈顶
 	int err =  luaL_loadbufferx(L, load_config, strlen(load_config), "=[skynet config]", "t");
 	assert(err == LUA_OK);
+	// 将config_file作为第一个参数插入栈顶
 	lua_pushstring(L, config_file);
 
+	// 执行load_config函数,参数是config_file,执行完成后，代码和参数都出栈，并将结果压栈
 	err = lua_pcall(L, 1, 1, 0);
 	if (err) {
 		fprintf(stderr,"%s\n",lua_tostring(L,-1));
 		lua_close(L);
 		return 1;
 	}
+	// config_file中的值添加到env
 	_init_env(L);
 
 	config.thread =  optint("thread",8);
@@ -160,6 +171,7 @@ main(int argc, char *argv[]) {
 
 	lua_close(L);
 
+	// 启动skynet
 	skynet_start(&config);
 	skynet_globalexit();
 	luaS_exitshr();

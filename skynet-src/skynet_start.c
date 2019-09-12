@@ -253,16 +253,23 @@ skynet_start(struct skynet_config * config) {
 	sigfillset(&sa.sa_mask);
 	sigaction(SIGHUP, &sa, NULL);
 
+	// 如果配置的是守护进程,开启守护进程
 	if (config->daemon) {
 		if (daemon_init(config->daemon)) {
 			exit(1);
 		}
 	}
+	// 初始化海港
 	skynet_harbor_init(config->harbor);
+	// 初始化handle_storage
 	skynet_handle_init(config->harbor);
+	// 初始化消息队列
 	skynet_mq_init();
+	// 初始化c动态连接库()
 	skynet_module_init(config->module_path);
+	// 初始化定时器
 	skynet_timer_init();
+	// 初始化socket
 	skynet_socket_init();
 	skynet_profile_enable(config->profile);
 

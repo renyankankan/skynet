@@ -21,6 +21,7 @@ struct modules {
 
 static struct modules * M = NULL;
 
+// 读取path路径, 路径使用';'分割成一小块,使用name替换各小块中的'?',再使用dlopen读取路径为动态连接库
 static void *
 _try_open(struct modules *m, const char * name) {
 	const char *l;
@@ -118,25 +119,33 @@ skynet_module_query(const char * name) {
 	if (result)
 		return result;
 
+	// 加锁
 	SPIN_LOCK(M)
 
+	// 再次查询
 	result = _query(name); // double check
 
 	if (result == NULL && M->count < MAX_MODULE_TYPE) {
 		int index = M->count;
+		// 从path中路径中读取动态链接库
 		void * dl = _try_open(M,name);
 		if (dl) {
 			M->m[index].name = name;
 			M->m[index].module = dl;
 
+			// 从动态链接库中提出相应的init等函数
 			if (open_sym(&M->m[index]) == 0) {
+				// 复制名字
 				M->m[index].name = skynet_strdup(name);
+				// 数量增加
 				M->count ++;
+				// 返回结果
 				result = &M->m[index];
 			}
 		}
 	}
 
+	// 解锁
 	SPIN_UNLOCK(M)
 
 	return result;
@@ -144,14 +153,17 @@ skynet_module_query(const char * name) {
 
 void 
 skynet_module_insert(struct skynet_module *mod) {
+	// 加锁
 	SPIN_LOCK(M)
 
+	// 确保模块不存在时，添加到模块
 	struct skynet_module * m = _query(mod->name);
 	assert(m == NULL && M->count < MAX_MODULE_TYPE);
 	int index = M->count;
 	M->m[index] = *mod;
 	++M->count;
 
+	// 释放锁
 	SPIN_UNLOCK(M)
 }
 
@@ -185,11 +197,14 @@ skynet_module_instance_signal(struct skynet_module *m, void *inst, int signal) {
 
 void 
 skynet_module_init(const char *path) {
+	// 新建变量并分配内存
 	struct modules *m = skynet_malloc(sizeof(*m));
+	// 初始化数量
 	m->count = 0;
+	// 复制路径
 	m->path = skynet_strdup(path);
-
+	// 初始化自旋锁
 	SPIN_INIT(m)
-
+	// 赋给全局变量
 	M = m;
 }

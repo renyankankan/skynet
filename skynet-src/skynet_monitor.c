@@ -17,20 +17,26 @@ struct skynet_monitor {
 
 struct skynet_monitor * 
 skynet_monitor_new() {
+	// 分配内存
 	struct skynet_monitor * ret = skynet_malloc(sizeof(*ret));
+	// 置空
 	memset(ret, 0, sizeof(*ret));
+	// 返回
 	return ret;
 }
 
 void 
 skynet_monitor_delete(struct skynet_monitor *sm) {
+	// 释放内存
 	skynet_free(sm);
 }
 
 void 
 skynet_monitor_trigger(struct skynet_monitor *sm, uint32_t source, uint32_t destination) {
+	// 设置内容
 	sm->source = source;
 	sm->destination = destination;
+	// 增加版本
 	ATOM_INC(&sm->version);
 }
 

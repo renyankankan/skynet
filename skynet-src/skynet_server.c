@@ -41,17 +41,17 @@
 #endif
 
 struct skynet_context {
-	void * instance;
-	struct skynet_module * mod;
+	void * instance; // 动态连接库实例例
+	struct skynet_module * mod; // 动态连接库
 	void * cb_ud;
 	skynet_cb cb;
-	struct message_queue *queue;
+	struct message_queue *queue; // 指向详细队列的指针
 	FILE * logfile;
 	uint64_t cpu_cost;	// in microsec
 	uint64_t cpu_start;	// in microsec
 	char result[32];
-	uint32_t handle;
-	int session_id;
+	uint32_t handle; // handle编号
+	int session_id; // session编号
 	int ref;
 	int message_count;
 	bool init;
@@ -65,7 +65,7 @@ struct skynet_node {
 	int total;
 	int init;
 	uint32_t monitor_exit;
-	pthread_key_t handle_key;
+	pthread_key_t handle_key; // 线程存储变量，相当于java的ThreadLocal变量
 	bool profile;	// default is off
 };
 
@@ -124,23 +124,27 @@ drop_message(struct skynet_message *msg, void *ud) {
 
 struct skynet_context * 
 skynet_context_new(const char * name, const char *param) {
+	// 查询动态链接库
 	struct skynet_module * mod = skynet_module_query(name);
 
 	if (mod == NULL)
 		return NULL;
 
+	// 创建动态链接库实例
 	void *inst = skynet_module_instance_create(mod);
 	if (inst == NULL)
 		return NULL;
+
+	// 实例化skynet_context
 	struct skynet_context * ctx = skynet_malloc(sizeof(*ctx));
 	CHECKCALLING_INIT(ctx)
 
-	ctx->mod = mod;
-	ctx->instance = inst;
+	ctx->mod = mod; // 动态连接库
+	ctx->instance = inst; // 动态连接库实例
 	ctx->ref = 2;
 	ctx->cb = NULL;
 	ctx->cb_ud = NULL;
-	ctx->session_id = 0;
+	ctx->session_id = 0; // session_id初始为0
 	ctx->logfile = NULL;
 
 	ctx->init = false;
@@ -151,10 +155,13 @@ skynet_context_new(const char * name, const char *param) {
 	ctx->message_count = 0;
 	ctx->profile = G_NODE.profile;
 	// Should set to 0 first to avoid skynet_handle_retireall get an uninitialized handle
-	ctx->handle = 0;	
+	ctx->handle = 0;
+	// 添加到全局变量H,并返回handle,再设置ctx的handle	
 	ctx->handle = skynet_handle_register(ctx);
+	// 创建消息队列
 	struct message_queue * queue = ctx->queue = skynet_mq_create(ctx->handle);
 	// init function maybe use ctx->handle, so it must init at last
+	// 增加G_NODE.total数量
 	context_inc();
 
 	CHECKCALLING_BEGIN(ctx)
