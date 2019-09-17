@@ -19,8 +19,8 @@
 #include <signal.h>
 
 struct monitor {
-	int count;
-	struct skynet_monitor ** m;
+	int count; // 线程数量
+	struct skynet_monitor ** m; // skynet_monitor指针数组，一个线程一个
 	pthread_cond_t cond;
 	pthread_mutex_t mutex;
 	int sleep;
@@ -130,6 +130,7 @@ thread_timer(void *p) {
 	struct monitor * m = p;
 	skynet_initthread(THREAD_TIMER);
 	for (;;) {
+		// 更新时间
 		skynet_updatetime();
 		skynet_socket_updatetime();
 		CHECK_ABORT
@@ -161,14 +162,20 @@ thread_worker(void *p) {
 	struct message_queue * q = NULL;
 	while (!m->quit) {
 		q = skynet_context_message_dispatch(sm, q, weight);
+		// 如果没包了，进入等待状态
 		if (q == NULL) {
+			// 获取互斥锁
 			if (pthread_mutex_lock(&m->mutex) == 0) {
+				// 进入睡眠的线程+1
 				++ m->sleep;
 				// "spurious wakeup" is harmless,
 				// because skynet_context_message_dispatch() can be call at any time.
+				// 如果没有退出,等待唤醒
 				if (!m->quit)
 					pthread_cond_wait(&m->cond, &m->mutex);
+				// 被唤醒后, 休眠线程-1
 				-- m->sleep;
+				// 释放互斥锁
 				if (pthread_mutex_unlock(&m->mutex)) {
 					fprintf(stderr, "unlock mutex error");
 					exit(1);
@@ -193,16 +200,20 @@ start(int thread) {
 	for (i=0;i<thread;i++) {
 		m->m[i] = skynet_monitor_new();
 	}
+	// 互斥锁初始化
 	if (pthread_mutex_init(&m->mutex, NULL)) {
 		fprintf(stderr, "Init mutex error");
 		exit(1);
 	}
+	// 
 	if (pthread_cond_init(&m->cond, NULL)) {
 		fprintf(stderr, "Init cond error");
 		exit(1);
 	}
 
+	// 创建monitor线程
 	create_thread(&pid[0], thread_monitor, m);
+	// 定时器线程
 	create_thread(&pid[1], thread_timer, m);
 	create_thread(&pid[2], thread_socket, m);
 
@@ -271,18 +282,23 @@ skynet_start(struct skynet_config * config) {
 	skynet_timer_init();
 	// 初始化socket
 	skynet_socket_init();
+	// 设置profile
 	skynet_profile_enable(config->profile);
 
+	// 启动日志ctx
 	struct skynet_context *ctx = skynet_context_new(config->logservice, config->logger);
 	if (ctx == NULL) {
 		fprintf(stderr, "Can't launch %s service\n", config->logservice);
 		exit(1);
 	}
 
+	// 给日志ctx取个名字
 	skynet_handle_namehandle(skynet_context_handle(ctx), "logger");
 
+	// 通过snlua, 将各种配置设置到新的状态机中，再调用状态机的lualoader方法，参数为skynet服务路径，启动skynet服务: 
 	bootstrap(ctx, config->bootstrap);
 
+	// 启动消息处理线程
 	start(config->thread);
 
 	// harbor_exit may call socket send, so it should exit before socket_free

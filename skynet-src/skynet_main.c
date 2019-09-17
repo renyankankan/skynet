@@ -160,15 +160,22 @@ main(int argc, char *argv[]) {
 	// config_file中的值添加到env
 	_init_env(L);
 
+	// 业务处理线程
 	config.thread =  optint("thread",8);
+	// cpath
 	config.module_path = optstring("cpath","./cservice/?.so");
+	// 港湾编号
 	config.harbor = optint("harbor", 1);
+	// 
 	config.bootstrap = optstring("bootstrap","snlua bootstrap");
+	// 是否为守护进程
 	config.daemon = optstring("daemon", NULL);
 	config.logger = optstring("logger", NULL);
 	config.logservice = optstring("logservice", "logger");
+	// 是否开启profile(profile开启时，可以看到cpu占用)
 	config.profile = optboolean("profile", 1);
 
+	// 关闭状态机
 	lua_close(L);
 
 	// 启动skynet

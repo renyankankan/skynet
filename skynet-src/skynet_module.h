@@ -11,15 +11,15 @@ typedef void (*skynet_dl_signal)(void * inst, int signal);
 struct skynet_module {
 	// 模块名字
 	const char * name;
-	// 模块内容
+	// 模块动态链接库内容
 	void * module;
-	// 创建模块的方法
+	// 动态链接库的create方法
 	skynet_dl_create create;
-	// 初始化模块的方法
+	// 动态链接库的init方法
 	skynet_dl_init init;
-	// 释放模块的方法
+	// 动态链接库的release方法
 	skynet_dl_release release;
-	// 
+	// 动态链接库的signal方法
 	skynet_dl_signal signal;
 };
 

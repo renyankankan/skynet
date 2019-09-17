@@ -13,10 +13,10 @@
 #define MAX_MODULE_TYPE 32
 
 struct modules {
-	int count;
-	struct spinlock lock;
-	const char * path;
-	struct skynet_module m[MAX_MODULE_TYPE];
+	int count; // skynet_module数量
+	struct spinlock lock; // 自旋锁
+	const char * path; // 查找路径cpath
+	struct skynet_module m[MAX_MODULE_TYPE]; // skynet_module数组
 };
 
 static struct modules * M = NULL;

@@ -52,18 +52,23 @@ logger_cb(struct skynet_context * context, void *ud, int type, int session, uint
 
 int
 logger_init(struct logger * inst, struct skynet_context *ctx, const char * parm) {
+	// 如果param存在(日志输出文件存在)
 	if (parm) {
+		// 打开文件
 		inst->handle = fopen(parm,"w");
 		if (inst->handle == NULL) {
 			return 1;
 		}
+		// 复制文件名字
 		inst->filename = skynet_malloc(strlen(parm)+1);
 		strcpy(inst->filename, parm);
 		inst->close = 1;
 	} else {
+		// 如果log文件不存在,输出到stdout
 		inst->handle = stdout;
 	}
 	if (inst->handle) {
+		// 设置消息的处理方法
 		skynet_callback(ctx, inst, logger_cb);
 		return 0;
 	}

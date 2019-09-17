@@ -43,8 +43,8 @@
 struct skynet_context {
 	void * instance; // 动态连接库实例例
 	struct skynet_module * mod; // 动态连接库
-	void * cb_ud;
-	skynet_cb cb;
+	void * cb_ud;  // 动态连接库create方法创建的结构体
+	skynet_cb cb; // 消息处理方法
 	struct message_queue *queue; // 指向详细队列的指针
 	FILE * logfile;
 	uint64_t cpu_cost;	// in microsec
@@ -124,13 +124,13 @@ drop_message(struct skynet_message *msg, void *ud) {
 
 struct skynet_context * 
 skynet_context_new(const char * name, const char *param) {
-	// 查询动态链接库
+	// 查询skynet_module
 	struct skynet_module * mod = skynet_module_query(name);
 
 	if (mod == NULL)
 		return NULL;
 
-	// 创建动态链接库实例
+	// 动态链接库create创建的实例
 	void *inst = skynet_module_instance_create(mod);
 	if (inst == NULL)
 		return NULL;
@@ -139,8 +139,8 @@ skynet_context_new(const char * name, const char *param) {
 	struct skynet_context * ctx = skynet_malloc(sizeof(*ctx));
 	CHECKCALLING_INIT(ctx)
 
-	ctx->mod = mod; // 动态连接库
-	ctx->instance = inst; // 动态连接库实例
+	ctx->mod = mod; // skynet_module
+	ctx->instance = inst; // skynet_module的create创建的实例
 	ctx->ref = 2;
 	ctx->cb = NULL;
 	ctx->cb_ud = NULL;
@@ -156,27 +156,32 @@ skynet_context_new(const char * name, const char *param) {
 	ctx->profile = G_NODE.profile;
 	// Should set to 0 first to avoid skynet_handle_retireall get an uninitialized handle
 	ctx->handle = 0;
-	// 添加到全局变量H,并返回handle,再设置ctx的handle	
+	// 添加到全局变量H, 使ctx能够处理消息,并返回handle,再设置ctx的handle	
 	ctx->handle = skynet_handle_register(ctx);
-	// 创建消息队列
+	// 创建handle为ctx->handle的消息队列
 	struct message_queue * queue = ctx->queue = skynet_mq_create(ctx->handle);
 	// init function maybe use ctx->handle, so it must init at last
 	// 增加G_NODE.total数量
 	context_inc();
 
 	CHECKCALLING_BEGIN(ctx)
+	// mod->init(inst, ctx, parm);
 	int r = skynet_module_instance_init(mod, inst, ctx, param);
 	CHECKCALLING_END(ctx)
+	// r == 0, 表明初始化成功
 	if (r == 0) {
 		struct skynet_context * ret = skynet_context_release(ctx);
 		if (ret) {
-			ctx->init = true;
+			ctx->init = true; // 初始完成
 		}
+		// 添加到全局消息队列
 		skynet_globalmq_push(queue);
+		// 输出日志
 		if (ret) {
 			skynet_error(ret, "LAUNCH %s %s", name, param ? param : "");
 		}
 		return ret;
+	// r == 1, 表明初始化失败
 	} else {
 		skynet_error(ctx, "FAILED launch %s", name);
 		uint32_t handle = ctx->handle;
@@ -310,6 +315,7 @@ skynet_context_message_dispatch(struct skynet_monitor *sm, struct message_queue 
 
 	uint32_t handle = skynet_mq_handle(q);
 
+	// 通过handle获取ctx,如果ctx存在,会增加一次ctx的引用
 	struct skynet_context * ctx = skynet_handle_grab(handle);
 	if (ctx == NULL) {
 		struct drop_t d = { handle };
@@ -321,8 +327,11 @@ skynet_context_message_dispatch(struct skynet_monitor *sm, struct message_queue 
 	struct skynet_message msg;
 
 	for (i=0;i<n;i++) {
+		// 从q中获取一个消息
 		if (skynet_mq_pop(q,&msg)) {
+			// 如果没有消息,释放ctx的引用(上一步skynet_handle_grab(handle)中增加了ctx的引用)
 			skynet_context_release(ctx);
+			// 弹出下一个消息队列
 			return skynet_globalmq_pop();
 		} else if (i==0 && weight >= 0) {
 			n = skynet_mq_length(q);
@@ -352,6 +361,7 @@ skynet_context_message_dispatch(struct skynet_monitor *sm, struct message_queue 
 		skynet_globalmq_push(q);
 		q = nq;
 	} 
+	// 释放一次引用
 	skynet_context_release(ctx);
 
 	return q;
@@ -741,7 +751,9 @@ skynet_send(struct skynet_context * context, uint32_t source, uint32_t destinati
 		smsg.data = data;
 		smsg.sz = sz;
 
+		// 添加消息
 		if (skynet_context_push(destination, &smsg)) {
+			// 如果失败，释放内存
 			skynet_free(data);
 			return -1;
 		}
@@ -813,13 +825,15 @@ skynet_context_send(struct skynet_context * ctx, void * msg, size_t sz, uint32_t
 
 void 
 skynet_globalinit(void) {
-	G_NODE.total = 0;
+	G_NODE.total = 0; // ctx数量
 	G_NODE.monitor_exit = 0;
 	G_NODE.init = 1;
+	// 创建线程私有变量
 	if (pthread_key_create(&G_NODE.handle_key, NULL)) {
 		fprintf(stderr, "pthread_key_create failed");
 		exit(1);
 	}
+	// 标识当前为主线程
 	// set mainthread's key
 	skynet_initthread(THREAD_MAIN);
 }

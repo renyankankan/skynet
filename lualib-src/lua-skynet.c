@@ -231,16 +231,23 @@ get_dest_string(lua_State *L, int index) {
 
 static int
 send_message(lua_State *L, int source, int idx_type) {
+	// 获取第一个上值ctx
 	struct skynet_context * context = lua_touserdata(L, lua_upvalueindex(1));
+	// 获取第一个参数dest
 	uint32_t dest = (uint32_t)lua_tointeger(L, 1);
 	const char * dest_string = NULL;
+	// 如果dest == 0, 可能是第一个参数为字符串
 	if (dest == 0) {
+		// 如果一个参数是整数，说明第一个参数是实实在在的整数0, 不合法
 		if (lua_type(L,1) == LUA_TNUMBER) {
 			return luaL_error(L, "Invalid service address 0");
 		}
+		// 获取字符串版本的dest
 		dest_string = get_dest_string(L, 1);
 	}
 
+	// idx_type为2或者3
+	// 获取类型
 	int type = luaL_checkinteger(L, idx_type+0);
 	int session = 0;
 	if (lua_isnil(L,idx_type+1)) {
@@ -509,17 +516,21 @@ luaopen_skynet_core(lua_State *L) {
 		{ NULL, NULL },
 	};
 
+	// 创建一张空表，并压栈
 	lua_createtable(L, 0, sizeof(l)/sizeof(l[0]) + sizeof(l2)/sizeof(l2[0]) -2);
 
+	// 将注册表中的skynet_context字段压栈,作为l的upvalue
 	lua_getfield(L, LUA_REGISTRYINDEX, "skynet_context");
+	// 获取栈顶的值，转化成userdata,校验ctx存在
 	struct skynet_context *ctx = lua_touserdata(L,-1);
 	if (ctx == NULL) {
 		return luaL_error(L, "Init skynet context first");
 	}
 
-
+	// 将l中的函数设置到空表中
 	luaL_setfuncs(L,l,1);
 
+	// 将l2中的函数设置到空表中
 	luaL_setfuncs(L,l2,0);
 
 	return 1;

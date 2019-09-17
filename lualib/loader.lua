@@ -1,15 +1,20 @@
 local args = {}
+-- 使用空格分隔参数
 for word in string.gmatch(..., "%S+") do
 	table.insert(args, word)
 end
 
+-- 第一个参数是服务名字
 SERVICE_NAME = args[1]
 
 local main, pattern
 
 local err = {}
+-- ';'分隔LUA_SERVICE
 for pat in string.gmatch(LUA_SERVICE, "([^;]+);*") do
+	-- SERVICE_NAME替换'?'形成文件路径
 	local filename = string.gsub(pat, "?", SERVICE_NAME)
+	-- 加载文件
 	local f, msg = loadfile(filename)
 	if not f then
 		table.insert(err, msg)
@@ -45,4 +50,5 @@ if LUA_PRELOAD then
 	LUA_PRELOAD = nil
 end
 
+-- 返回args第2个之后的的参数
 main(select(2, table.unpack(args)))

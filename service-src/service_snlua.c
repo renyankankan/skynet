@@ -12,8 +12,8 @@
 #define MEMORY_WARNING_REPORT (1024 * 1024 * 32)
 
 struct snlua {
-	lua_State * L;
-	struct skynet_context * ctx;
+	lua_State * L; // 状态机
+	struct skynet_context * ctx; 
 	size_t mem;
 	size_t mem_report;
 	size_t mem_limit;
@@ -38,8 +38,11 @@ codecache(lua_State *L) {
 		{ "mode", cleardummy },
 		{ NULL, NULL },
 	};
+	// 创建一张新的表，并把表l中的函数注册进去
 	luaL_newlib(L,l);
+	// 将全局变量loadfile压栈
 	lua_getglobal(L, "loadfile");
+	// 将loadfile函数添加到-2位置的表中
 	lua_setfield(L, -2, "loadfile");
 	return 1;
 }
@@ -76,15 +79,22 @@ static int
 init_cb(struct snlua *l, struct skynet_context *ctx, const char * args, size_t sz) {
 	lua_State *L = l->L;
 	l->ctx = ctx;
+	// 停止GC
 	lua_gc(L, LUA_GCSTOP, 0);
+	// 将true压栈
 	lua_pushboolean(L, 1);  /* signal for libraries to ignore env. vars. */
+	// 注册表中设置LUA_NOENV = true
 	lua_setfield(L, LUA_REGISTRYINDEX, "LUA_NOENV");
+	// 打开状态机中的所有Lua标准库
 	luaL_openlibs(L);
+	// 将ctx地址压栈
 	lua_pushlightuserdata(L, ctx);
+	// 注册表中设置skynet_context = ctx
 	lua_setfield(L, LUA_REGISTRYINDEX, "skynet_context");
 	luaL_requiref(L, "skynet.codecache", codecache , 0);
 	lua_pop(L,1);
 
+	// 获取lua_path, 并设置为LUA_PATH
 	const char *path = optstring(ctx, "lua_path","./lualib/?.lua;./lualib/?/init.lua");
 	lua_pushstring(L, path);
 	lua_setglobal(L, "LUA_PATH");
@@ -98,25 +108,31 @@ init_cb(struct snlua *l, struct skynet_context *ctx, const char * args, size_t s
 	lua_pushstring(L, preload);
 	lua_setglobal(L, "LUA_PRELOAD");
 
+	// 将错误处理函数压栈
 	lua_pushcfunction(L, traceback);
 	assert(lua_gettop(L) == 1);
 
 	const char * loader = optstring(ctx, "lualoader", "./lualib/loader.lua");
 
+	// 加载代码块压栈
 	int r = luaL_loadfile(L,loader);
 	if (r != LUA_OK) {
 		skynet_error(ctx, "Can't load %s : %s", loader, lua_tostring(L, -1));
 		report_launcher_error(ctx);
 		return 1;
 	}
+	// 加载参数压栈: 如: bootstrap, 通过lualoader启动bootstrap.lua
 	lua_pushlstring(L, args, sz);
+	// 调用加载的代码(含有一个参数，返回0个参数，并且使用栈1位置的处理函数处理错误)
 	r = lua_pcall(L,1,0,1);
 	if (r != LUA_OK) {
 		skynet_error(ctx, "lua loader error : %s", lua_tostring(L, -1));
 		report_launcher_error(ctx);
 		return 1;
 	}
+	// 清空栈
 	lua_settop(L,0);
+	// 将注册表中的memlimit字段压栈，并返回类型
 	if (lua_getfield(L, LUA_REGISTRYINDEX, "memlimit") == LUA_TNUMBER) {
 		size_t limit = lua_tointeger(L, -1);
 		l->mem_limit = limit;
@@ -126,6 +142,7 @@ init_cb(struct snlua *l, struct skynet_context *ctx, const char * args, size_t s
 	}
 	lua_pop(L, 1);
 
+	// 重新启动垃圾回收
 	lua_gc(L, LUA_GCRESTART, 0);
 
 	return 0;
@@ -146,13 +163,19 @@ launch_cb(struct skynet_context * context, void *ud, int type, int session, uint
 
 int
 snlua_init(struct snlua *l, struct skynet_context *ctx, const char * args) {
+	// 获取参数长度
 	int sz = strlen(args);
+	// 分配参数内存
 	char * tmp = skynet_malloc(sz);
+	// 拷贝一份参数
 	memcpy(tmp, args, sz);
+	// 设置ctx的cb_ud和与cb
 	skynet_callback(ctx, l , launch_cb);
 	const char * self = skynet_command(ctx, "REG", NULL);
+	// 获取当前ctx的handle_id
 	uint32_t handle_id = strtoul(self+1, NULL, 16);
 	// it must be first message
+	// 给自己发送消息,处理消息的方法是launch_cb
 	skynet_send(ctx, 0, handle_id, PTYPE_TAG_DONTCOPY,0, tmp, sz);
 	return 0;
 }
@@ -183,7 +206,8 @@ snlua_create(void) {
 	memset(l,0,sizeof(*l));
 	l->mem_report = MEMORY_WARNING_REPORT;
 	l->mem_limit = 0;
-	l->L = lua_newstate(lalloc, l);
+	// 使用lalloc方法作为内存管理，创建状态机
+	l->L = lua_newstate(lalloc, l); 
 	return l;
 }
 
